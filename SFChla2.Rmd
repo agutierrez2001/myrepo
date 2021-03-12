@@ -1,0 +1,196 @@
+---
+title: "Metadata Variability Analysis"
+author: "Andres"
+date: "23/09/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+library("ggplot2")
+library("phyloseq")
+library("vegan")
+library("DESeq2")
+library("Rmisc")
+library("dplyr")
+library("tidyr")
+library("readxl")
+library("stringr")
+library("openxlsx")
+library(lubridate)
+library(reshape2)
+library(Cairo)
+library(cairoDevice)
+library(hrbrthemes)
+library(viridis)
+library(tidyverse)
+# devtools::install_github("hadley/r4ds")
+# install.packages("lazyeval")
+# install.packages("ggplot2")
+
+
+```
+
+## reading file
+
+You can also embed plots, for example:
+
+```{r}
+DNA_metadata.sw <-  read_excel("samples_df_MLD_July2020_RANKED.xlsx") %>%
+    filter(Sample_Type == "Seawater") %>%
+    filter(Water_mass.TS1 != "ANT")
+
+DNA_metadata.sw <- DNA_metadata.sw %>%
+      mutate(apico_pct = Chla_02*100/(Chla_02 + Chla_2 + Chla_20)) %>%
+      mutate(bnano_pct = Chla_2*100/(Chla_02 + Chla_2 + Chla_20)) %>%
+      mutate(cmicro_pct = Chla_20*100/(Chla_02 + Chla_2 + Chla_20))
+
+```
+
+### summary values
+```{r, fig.height=4, fig.width=4}
+
+SF_chla_stat <- DNA_metadata.sw %>%
+  filter(dens_layer == "surface") %>%
+  group_by(Water_mass.TS1) %>%
+  summarize(mean_Chla_02 = mean(Chla_02, na.rm=TRUE), sd_Chla_02 = sd(Chla_02, na.rm = TRUE), mean_Chla_2 = mean(Chla_2, na.rm=TRUE), sd_Chla_2 = sd(Chla_2, na.rm = TRUE), mean_Chla_20 = mean(Chla_20, na.rm=TRUE), sd_Chla_20 = sd(Chla_20, na.rm = TRUE), mean_pico_pct = mean(apico_pct, na.rm=TRUE), sd_pico_pct = sd(apico_pct, na.rm = TRUE), mean_nano_pct = mean(bnano_pct, na.rm=TRUE), sd_nano_pct = sd(bnano_pct, na.rm = TRUE), mean_micro_pct = mean(cmicro_pct, na.rm=TRUE), sd_micro_pct = sd(cmicro_pct, na.rm = TRUE), Nsamples = n_distinct(cmicro_pct,na.rm = TRUE))
+
+write.xlsx(SF_chla_stat, "Tables/SFChla_table_MixedLayer.xlsx")
+
+
+```
+
+
+
+###Set colors for plotting
+```{r, fig.height=4, fig.width=4}
+# Set colors for plotting
+Water_mass_colors <- c(
+   "#00688b", "#44c45d","#e0301e")
+# PwC palette for STW
+#coastlines palette for STF
+# Flux palette for SAW
+Area_colors <- c(
+  "#e0301e","#ffc100", "#00688b","#39ff14" ,"#0befff","#0a5700", "#ff77ff","#708090","#602320")
+
+Nitrate_colors <- c("#ffc100", "#00688b","#39ff14" ,"#0befff","#0a5700", "#ff77ff","#708090","#602320")
+
+
+Table3a <- DNA_metadata.sw %>%
+filter(light_layer == "Euphotic") %>%
+  filter(dens_layer == "surface") %>%
+  group_by(Water_mass.TS1, Area2) %>%
+  summarize(mean_T = mean(Temperature.CTD, na.rm=TRUE), sd_T = sd(Temperature.CTD, na.rm = TRUE), mean_sal = mean(Salinity.CTD, na.rm=TRUE), sd_sal = sd(Salinity.CTD, na.rm = TRUE), mean_chla = mean(ChlaTot, na.rm=TRUE), sd_chla = sd(ChlaTot, na.rm = TRUE), mean_NO3 = mean(NO3, na.rm=TRUE), sd_NO3 = sd(NO3, na.rm = TRUE), Nsamples = n_distinct(Temperature.CTD,na.rm = TRUE))
+
+write.xlsx(Table3a, "Tables/Table3area_mean_TSNO3Chla.xlsx")
+
+
+```
+
+
+## subsetting variables - Only mixed layer - surface
+
+```{r, fig.height=3, fig.width=4}
+### Select Subset of samples to be plotted
+DNA_metadata.ML <- DNA_metadata.sw %>%
+  filter(dens_layer == "surface") 
+
+```
+
+
+
+## wide to long format
+
+```{r, fig.height=3, fig.width=4}
+## dataframe for plotting
+DNA_metadata.ML <- 
+      select(DNA_metadata.ML, -c(dens_layer:median_Chla))
+             
+DNA_metadata.ML_long <- DNA_metadata.ML %>%
+      pivot_longer(cols = -(Number_ID:Latitude.CTD),
+                   names_to = "Size",
+                   values_to = "values",
+                   values_drop_na = TRUE) 
+```
+
+## Plotting distribution of continuous variables - Box plots - Water masses and Cruises
+
+```{r, fig.height=3, fig.width=4}
+## STACKED BARS
+
+size_colors <- c(
+    "#0077FF","#00FF09", "#FFB300")
+
+SF_Chla <- DNA_metadata.ML_long %>%
+  filter(Size %in% c('apico_pct', 'bnano_pct', 'cmicro_pct'))
+
+CairoPDF(file = "R.Figures/SFChla/SF_Chla_pct_ML.pdf", width = 5, height = 3) 
+ggplot(SF_Chla, aes(x = Water_mass.TS1, y = values, fill = Size)) + 
+  geom_bar(stat = "identity", position = "fill") +
+  scale_fill_manual(values = size_colors) +
+ theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        xlab("Water mass")+ ylab("SF-Chla (%)") +
+        theme(axis.text.x = element_text(hjust = 1, size = 14)) +
+        theme(axis.text.y = element_text(size = 14)) +
+        theme(axis.title.y = element_text(size = 18)) +
+        theme(axis.title.x = element_text(size = 18)) +
+        theme(legend.text = element_text(size = 14)) +
+        theme(legend.title = element_text(size = 14))
+
+
+
+dev.off()
+  
+# ggsave("R.Figures/SFChla/SFChla_stacked.bar.pdf", width = 4, height =3, units = c("in"), dpi = 300)
+  
+```
+
+```{r, fig.height=3, fig.width=4}
+## BOX PLOTS
+
+CairoPDF(file = "R.Figures/SFChla/SF_Chla_pct1.pdf", width = 5, height = 3) 
+ggplot(SF_Chla, aes(x = Water_mass.TS1 , y = values, color = Size)) +
+        #geom_point(size = 1) +
+       geom_boxplot(outlier.shape = NA) + 
+       geom_jitter(size = 0.8, width = 0.2, alpha = 0.2) +
+        #scale_x_continuous(limits = c(0, 10)) +
+        #ylim(-100, 0) +
+        #scale_color_manual(values = water_colors) +
+       # geom_errorbar(aes(ymin = mean-sd, ymax = mean+sd), size = 0.1, width = 0.1) +
+        theme_bw() + ggtitle("SF_Chla_pct") +
+        xlab("Water_mass.TS1")+ ylab("% Chla") +
+        theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+        theme(axis.text.x = element_text(hjust = 1, size = 12)) +
+        theme(axis.text.y = element_text(size = 12)) 
+        # facet_wrap(~file_code, scales = "free_y")
+  dev.off()
+  
+# ggsave("R.Figures/SFChla_stacked.bar.pdf", width = 4, height =3, units = c("in"), dpi = 300)
+  
+```
+
+### Plotting variables for different categories
+```{r}
+
+### plot categories - ranks and drop NA category  
+
+```
+
+
+## Alternative way of summarizing the data  - problems with data attributes though
+```{r}
+
+
+```
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
